@@ -114,7 +114,11 @@ runs:
 
           def install
             if build.head?
-              system "go", "build", *std_go_args(ldflags: "-s -w")
+              fetch_args = %w[fetch --tags --force --quiet]
+              fetch_args << "--unshallow" if File.exist?(".git/shallow")
+              system "git", *fetch_args
+              system "make", "build"
+              bin.install "dist/${INPUT_NAME}"
             else
               bin.install "${INPUT_NAME}"
             end
