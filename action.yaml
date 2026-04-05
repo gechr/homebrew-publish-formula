@@ -12,8 +12,8 @@ inputs:
     description: Formula description
     required: true
   tap:
-    description: Tap repository (e.g. gechr/homebrew-tap)
-    required: true
+    description: Tap repository
+    default: gechr/homebrew-tap
   token:
     description: GitHub token with write access to the tap repository
     required: true
