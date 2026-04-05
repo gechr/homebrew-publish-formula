@@ -1,0 +1,139 @@
+name: Publish Homebrew Formula
+description: Generate and publish a Homebrew formula to a tap repository.
+
+inputs:
+  name:
+    description: Binary/formula name (e.g. clone)
+    required: true
+  class:
+    description: Ruby class name (e.g. Clone). Defaults to title case of name.
+    default: ""
+  desc:
+    description: Formula description
+    required: true
+  tap:
+    description: Tap repository (e.g. gechr/homebrew-tap)
+    required: true
+  token:
+    description: GitHub token with write access to the tap repository
+    required: true
+  version:
+    description: Version (with or without v prefix)
+    required: true
+  homepage:
+    description: Project homepage URL
+    required: true
+  checksums-file:
+    description: Path to checksums.txt
+    default: dist/checksums.txt
+  completion-args:
+    description: "Extra args for generate_completions_from_executable. Empty to disable."
+    default: "--print-completion"
+  shell-parameter-format:
+    description: "shell_parameter_format for generate_completions_from_executable"
+    default: "--@shell="
+
+runs:
+  using: composite
+  steps:
+    - name: Generate and publish formula
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_CLASS: ${{ inputs.class }}
+        INPUT_DESC: ${{ inputs.desc }}
+        INPUT_TAP: ${{ inputs.tap }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_HOMEPAGE: ${{ inputs.homepage }}
+        INPUT_CHECKSUMS_FILE: ${{ inputs.checksums-file }}
+        INPUT_COMPLETION_ARGS: ${{ inputs.completion-args }}
+        INPUT_SHELL_PARAMETER_FORMAT: ${{ inputs.shell-parameter-format }}
+      run: |
+        INPUT_VERSION="${INPUT_VERSION#v}"
+        if [[ -z "$INPUT_CLASS" ]]; then
+          INPUT_CLASS="$(echo "$INPUT_NAME" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')"
+        fi
+        CHECKSUMS=$(cat "$INPUT_CHECKSUMS_FILE")
+        get_sha() { echo "$CHECKSUMS" | awk -v f="${INPUT_NAME}_${1}.tar.gz" '$2 == f {print $1}'; }
+
+        SHA_DARWIN_AMD64=$(get_sha darwin_amd64)
+        SHA_DARWIN_ARM64=$(get_sha darwin_arm64)
+        SHA_LINUX_AMD64=$(get_sha linux_amd64)
+        SHA_LINUX_ARM64=$(get_sha linux_arm64)
+
+        # Build completions line
+        COMPLETIONS_LINE=""
+        if [[ -n "$INPUT_COMPLETION_ARGS" ]]; then
+          COMPLETIONS_LINE="    generate_completions_from_executable(bin/\"${INPUT_NAME}\", \"${INPUT_COMPLETION_ARGS}\""
+          if [[ -n "$INPUT_SHELL_PARAMETER_FORMAT" ]]; then
+            COMPLETIONS_LINE="${COMPLETIONS_LINE}, shell_parameter_format: \"${INPUT_SHELL_PARAMETER_FORMAT}\""
+          fi
+          COMPLETIONS_LINE="${COMPLETIONS_LINE})"
+        fi
+
+        {
+          cat <<'HEADER'
+        # typed: strict
+        # frozen_string_literal: true
+
+        HEADER
+
+          cat <<EOF
+        class ${INPUT_CLASS} < Formula
+          desc "${INPUT_DESC}"
+          homepage "${INPUT_HOMEPAGE}"
+          version "${INPUT_VERSION}"
+          license "MIT"
+
+          head "${INPUT_HOMEPAGE}.git", branch: "main"
+
+          on_macos do
+            if Hardware::CPU.intel?
+              url "${INPUT_HOMEPAGE}/releases/download/v#{version}/${INPUT_NAME}_darwin_amd64.tar.gz"
+              sha256 "${SHA_DARWIN_AMD64}"
+            end
+            if Hardware::CPU.arm?
+              url "${INPUT_HOMEPAGE}/releases/download/v#{version}/${INPUT_NAME}_darwin_arm64.tar.gz"
+              sha256 "${SHA_DARWIN_ARM64}"
+            end
+          end
+
+          on_linux do
+            if Hardware::CPU.intel?
+              url "${INPUT_HOMEPAGE}/releases/download/v#{version}/${INPUT_NAME}_linux_amd64.tar.gz"
+              sha256 "${SHA_LINUX_AMD64}"
+            end
+            if Hardware::CPU.arm?
+              url "${INPUT_HOMEPAGE}/releases/download/v#{version}/${INPUT_NAME}_linux_arm64.tar.gz"
+              sha256 "${SHA_LINUX_ARM64}"
+            end
+          end
+
+          depends_on "go" => :build if build.head?
+
+          def install
+            if build.head?
+              system "go", "build", *std_go_args(ldflags: "-s -w")
+            else
+              bin.install "${INPUT_NAME}"
+            end
+        ${COMPLETIONS_LINE}
+          end
+
+          test do
+            assert_match "${INPUT_NAME}", shell_output("#{bin}/${INPUT_NAME} --help")
+          end
+        end
+        EOF
+        } > formula.rb
+
+        EXISTING_SHA=$(gh api "repos/${INPUT_TAP}/contents/Formula/${INPUT_NAME}.rb" -q .sha 2>/dev/null || true)
+        CONTENT=$(base64 < formula.rb)
+
+        jq -n \
+          --arg message "${INPUT_NAME}: v${INPUT_VERSION}" \
+          --arg content "$CONTENT" \
+          --arg sha "$EXISTING_SHA" \
+          '{message: $message, content: $content} + (if $sha != "" then {sha: $sha} else {} end)' |
+        gh api "repos/${INPUT_TAP}/contents/Formula/${INPUT_NAME}.rb" -X PUT --input -
