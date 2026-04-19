@@ -32,6 +32,12 @@ inputs:
   shell-parameter-format:
     description: "shell_parameter_format for generate_completions_from_executable"
     default: "--@shell="
+  head-depends-on:
+    description: "Build dependency for the head stanza (e.g. go, rust)"
+    default: "go"
+  head-build-binary:
+    description: "Path to the built binary after `make build` (relative to repo root). Defaults to dist/<name>."
+    default: ""
 
 runs:
   using: composite
@@ -49,10 +55,15 @@ runs:
         INPUT_CHECKSUMS_FILE: ${{ inputs.checksums-file }}
         INPUT_COMPLETION_ARGS: ${{ inputs.completion-args }}
         INPUT_SHELL_PARAMETER_FORMAT: ${{ inputs.shell-parameter-format }}
+        INPUT_HEAD_DEPENDS_ON: ${{ inputs.head-depends-on }}
+        INPUT_HEAD_BUILD_BINARY: ${{ inputs.head-build-binary }}
       run: |
         INPUT_VERSION="${INPUT_VERSION#v}"
         if [[ -z "$INPUT_CLASS" ]]; then
           INPUT_CLASS="$(echo "$INPUT_NAME" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')"
+        fi
+        if [[ -z "$INPUT_HEAD_BUILD_BINARY" ]]; then
+          INPUT_HEAD_BUILD_BINARY="dist/${INPUT_NAME}"
         fi
         CHECKSUMS=$(cat "$INPUT_CHECKSUMS_FILE")
         get_sha() { echo "$CHECKSUMS" | awk -v f="${INPUT_NAME}_${1}.tar.gz" '$2 == f {print $1}'; }
@@ -88,7 +99,7 @@ runs:
 
           head do
             url "${INPUT_HOMEPAGE}.git", branch: "main"
-            depends_on "go" => :build
+            depends_on "${INPUT_HEAD_DEPENDS_ON}" => :build
           end
 
           on_macos do
@@ -119,7 +130,7 @@ runs:
               fetch_args << "--unshallow" if File.exist?(".git/shallow")
               system "git", *fetch_args
               system "make", "build"
-              bin.install "dist/${INPUT_NAME}"
+              bin.install "${INPUT_HEAD_BUILD_BINARY}" => "${INPUT_NAME}"
             else
               bin.install "${INPUT_NAME}"
             end
