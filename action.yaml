@@ -60,7 +60,7 @@ runs:
       run: |
         INPUT_VERSION="${INPUT_VERSION#v}"
         if [[ -z "$INPUT_CLASS" ]]; then
-          INPUT_CLASS="$(echo "$INPUT_NAME" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')"
+          INPUT_CLASS="$(echo "$INPUT_NAME" | awk -F'[-_]' '{for(i=1;i<=NF;i++)printf "%s%s",toupper(substr($i,1,1)),tolower(substr($i,2))}')"
         fi
         if [[ -z "$INPUT_HEAD_BUILD_BINARY" ]]; then
           INPUT_HEAD_BUILD_BINARY="dist/${INPUT_NAME}"
