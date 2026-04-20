@@ -73,14 +73,14 @@ runs:
         SHA_LINUX_AMD64=$(get_sha linux_amd64)
         SHA_LINUX_ARM64=$(get_sha linux_arm64)
 
-        # Build completions line
-        COMPLETIONS_LINE=""
+        # Build completions block (with leading newline so it separates cleanly from the else branch)
+        COMPLETIONS_BLOCK=""
         if [[ -n "$INPUT_COMPLETION_ARGS" ]]; then
-          COMPLETIONS_LINE="    generate_completions_from_executable(bin/\"${INPUT_NAME}\", \"${INPUT_COMPLETION_ARGS}\""
+          COMPLETIONS_BLOCK=$'\n'"    generate_completions_from_executable(bin/\"${INPUT_NAME}\", \"${INPUT_COMPLETION_ARGS}\""
           if [[ -n "$INPUT_SHELL_PARAMETER_FORMAT" ]]; then
-            COMPLETIONS_LINE="${COMPLETIONS_LINE}, shell_parameter_format: \"${INPUT_SHELL_PARAMETER_FORMAT}\""
+            COMPLETIONS_BLOCK="${COMPLETIONS_BLOCK}, shell_parameter_format: \"${INPUT_SHELL_PARAMETER_FORMAT}\""
           fi
-          COMPLETIONS_LINE="${COMPLETIONS_LINE})"
+          COMPLETIONS_BLOCK="${COMPLETIONS_BLOCK})"
         fi
 
         {
@@ -133,8 +133,7 @@ runs:
               bin.install "${INPUT_HEAD_BUILD_BINARY}" => "${INPUT_NAME}"
             else
               bin.install "${INPUT_NAME}"
-            end
-        ${COMPLETIONS_LINE}
+            end${COMPLETIONS_BLOCK}
           end
 
           test do
